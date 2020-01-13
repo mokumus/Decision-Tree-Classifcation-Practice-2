@@ -3,6 +3,8 @@
     <words>
       <w>datapoints</w>
       <w>gini</w>
+      <w>misclass</w>
+      <w>misclassification</w>
     </words>
   </dictionary>
 </component>

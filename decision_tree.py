@@ -1,6 +1,11 @@
 import numpy as np
-import pandas as pd
 from math import log
+from enum import Enum
+
+class Measure(Enum):
+	GINI = 1
+	ENTROPY = 2
+	MISCLASS = 3
 
 def remove_garbage(df):
 	"""
@@ -13,51 +18,48 @@ def remove_garbage(df):
 	indices_to_keep = ~df.isin([np.nan, np.inf, -np.inf]).any(1)
 	return df[indices_to_keep].astype(np.float64)
 
-def gini_index(groups, classes):
+def score_splits(groups, classes, measure):
 	"""
 	Cost function used to evaluate splits in the database.
+	:param measure: gini, entropy or misclassification rate
 	:param groups: 2 groups sub groups of database
 	:param classes: attribute to be predicted, i.e: White Wine[0.0], Red Wine[1.0] -> classes: [0.0, 1.0]
-	:return: gini index
+	:return: measured score
 	"""
 	# calculate total number of data points
 	n_datapoints = float(sum([len(group) for group in groups]))
-	gini = 0.0
+	gini = entropy = misclass = 0.0
 
 	for group in groups: # sum weighted gini index for each group
 		size = float(len(group))
 		# avoid divide by zero
 		if size == 0:
 			continue
-		score = 0.0
-		# score the group based on the score for each class, higher is better
+		gini_score = entropy_score = misclass_score = 0.0
+
+		# score the group based on the score for each class
 		for class_val in classes:
 			p = [row[-1] for row in group].count(class_val) / size
-			score += p * p
-		# weight the group score by its relative size
-		gini += (1.0 - score) * (size / n_datapoints)
-	return gini
-
-
-def entropy(groups, classes):
-	# calculate total number of data points
-	n_datapoints = float(sum([len(group) for group in groups]))
-	entropy = 0.0
-
-	for group in groups:
-		size = float(len(group))
-		# avoid divide by zero
-		if size == 0:
-			continue
-		score = 0.0
-		# score the group based on the score for each class, higher is better
-		for class_val in classes:
-			p = [row[-1] for row in group].count(class_val) / size #Probility percentage
 			if p != 0:
-				score += -p*log(p,2)
+				gini_score     += p * p
+				entropy_score  += -p * log(p, 2)
+				misclass_score += 1 - max(p, 1 - p)
 		# weight the group score by its relative size
-		entropy +=  score * (size / n_datapoints)
-	return entropy
+		gini     += (1.0 - gini_score) * (size / n_datapoints)
+		entropy  += entropy_score * (size / n_datapoints)
+		misclass += misclass_score * (size / n_datapoints)
+
+	if measure == Measure.GINI:
+		return gini
+	elif measure == Measure.ENTROPY:
+		return entropy
+	elif measure == Measure.MISCLASS:
+		return misclass
+	else:
+		raise Exception('Invalid measure method')
+
+
+
 
 def construct_split(index, value, db_matrix):
 	"""
@@ -76,10 +78,11 @@ def construct_split(index, value, db_matrix):
 	return left, right
 
 
-def get_split(db_matrix):
+def get_split(db_matrix, measure):
 	"""
 	Find the best split point in given db_matrix
 	:param db_matrix: database matrix -> array-like
+	:param measure: gini, entropy or misclassification rate
 	:return: dict('index': index of the attribute compared in the row
 				  'value': attribute value of the splitting point,
 				  'groups': 2 groups sub groups of database)
@@ -94,13 +97,13 @@ def get_split(db_matrix):
 	for index in range(len(db_matrix[0]) - 1):
 		for row in db_matrix:
 			groups = construct_split(index, row[index], db_matrix)
-			gini = entropy(groups, class_values)
-			print('X{} < {:.3f} Ent={:.2f}'.format(index+1, row[index], gini))
+			tmp_score = score_splits(groups, class_values, measure)
+			#print('X{} < {:.3f} Score={:.2f}'.format(index+1, row[index], tmp_score))
 			# Update split info if new best split is found
-			if gini < split_score:
+			if tmp_score < split_score:
 				split_index = index
 				split_value = row[index]
-				split_score = gini
+				split_score = tmp_score
 				split_groups = groups
 
 	result = {'index':split_index, 'value':split_value, 'groups':split_groups}
@@ -116,13 +119,14 @@ def construct_leaf_node(group):
 	return max(set(outcomes), key=outcomes.count)
 
 # Create child splits for a node or make terminal
-def split(node, max_depth, min_size, depth):
+def split(node, max_depth, min_size, depth, measure):
 	"""
 	Recursively create splits until max depth is reached
 	:param node: decision node
 	:param max_depth: maximum depth of the decision tree
 	:param min_size: minimum size of a split group
 	:param depth: depth of the node
+	:param measure: gini, entropy or misclassification rate
 	:return: None
 	"""
 	left, right = node['groups']
@@ -140,26 +144,27 @@ def split(node, max_depth, min_size, depth):
 	if len(left) <= min_size:
 		node['left'] = construct_leaf_node(left)
 	else:
-		node['left'] = get_split(left)
-		split(node['left'], max_depth, min_size, depth+1)
+		node['left'] = get_split(left, measure)
+		split(node['left'], max_depth, min_size, depth+1, measure)
 	# process right child
 	if len(right) <= min_size:
 		node['right'] = construct_leaf_node(right)
 	else:
-		node['right'] = get_split(right)
-		split(node['right'], max_depth, min_size, depth+1)
+		node['right'] = get_split(right, measure)
+		split(node['right'], max_depth, min_size, depth+1, measure)
 
 
-def build_tree(db_training, max_depth, min_size):
+def build_tree(db_training, max_depth, min_size , measure):
 	"""
 	Build a decision tree
 	:param db_training: Training data to construct the rules for the decision tree
 	:param max_depth: Maximum depth of the tree
 	:param min_size: Minimum split size
+	:param measure: gini, entropy or misclassification rate
 	:return: tree root
 	"""
-	root = get_split(db_training)
-	split(root, max_depth, min_size, 1)
+	root = get_split(db_training, measure)
+	split(root, max_depth, min_size, 1, measure)
 	return root
 
 def print_tree(node, labels, depth=0 ):
@@ -203,41 +208,13 @@ def accuracy(db_testing, tree):
 	:return: Success rate -> between 0.0 and 1.0
 	"""
 	correct_predictions = 0.0
+	print("Predictions: ", end="")
 	for row in db_testing:
 		prediction = predict(tree, row)
+		print("{:.0f}".format(prediction), end="")
 		if prediction == row[-1]:
 			correct_predictions += 1.0
+	print()
 	return correct_predictions / len(db_testing)
 
-def main() :
-	#Set display option for data frames
-	pd.set_option('display.max_columns', 11)
-	pd.set_option('display.width', 200)
 
-	#Read data and remove garbage
-	df = pd.read_csv('winequalityN.csv')
-	df = remove_garbage(pd.DataFrame(data=df, columns=list(df.columns.values)))
-	cols = df.columns.tolist()
-	cols = cols[1:] + cols[0:1]	#Move wine color column to last column
-	df = df[cols]
-	labels = df.columns.values
-
-	#Extract training data, sample size n
-	#df_white = df[(df['type'] == 0.0)]
-	#df_red = df[(df['type'] == 1.0)]
-	df_training = df.sample(n=100, random_state=1)	#Mixed sample
-
-	tree_depth = 3
-	min_split = 1
-	tree = build_tree(df_training.values, max_depth=tree_depth, min_size=min_split)
-	print("=" * 40)
-	print_tree(tree, labels)
-	print("=" * 40)
-	print('Min split:   {}'.format(min_split))
-	print('Tree depth:  {}'.format(tree_depth))
-	print('Sample Size: {}'.format(len(df_training)))
-	print('Accuracy:    {:.2f}'.format(accuracy(df.values, tree)))
-	print("="*40)
-
-if __name__ == "__main__":
-	main()
