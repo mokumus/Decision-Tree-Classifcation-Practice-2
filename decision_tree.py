@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from math import log
 
 def remove_garbage(df):
 	"""
@@ -37,6 +38,27 @@ def gini_index(groups, classes):
 		gini += (1.0 - score) * (size / n_datapoints)
 	return gini
 
+
+def entropy(groups, classes):
+	# calculate total number of data points
+	n_datapoints = float(sum([len(group) for group in groups]))
+	entropy = 0.0
+
+	for group in groups:
+		size = float(len(group))
+		# avoid divide by zero
+		if size == 0:
+			continue
+		score = 0.0
+		# score the group based on the score for each class, higher is better
+		for class_val in classes:
+			p = [row[-1] for row in group].count(class_val) / size #Probility percentage
+			if p != 0:
+				score += -p*log(p,2)
+		# weight the group score by its relative size
+		entropy +=  score * (size / n_datapoints)
+	return entropy
+
 def construct_split(index, value, db_matrix):
 	"""
 	Constructs two lists from db_matrix, split is based on the given value
@@ -72,8 +94,8 @@ def get_split(db_matrix):
 	for index in range(len(db_matrix[0]) - 1):
 		for row in db_matrix:
 			groups = construct_split(index, row[index], db_matrix)
-			gini = gini_index(groups, class_values)
-			#print('X{} < {:.3f} Gini={:.2f}'.format(index+1, row[index], gini))
+			gini = entropy(groups, class_values)
+			print('X{} < {:.3f} Ent={:.2f}'.format(index+1, row[index], gini))
 			# Update split info if new best split is found
 			if gini < split_score:
 				split_index = index
