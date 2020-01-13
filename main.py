@@ -58,9 +58,9 @@ def main() :
 	df_red = df[(df['type'] == 1.0)]
 	df_training = df.sample(n=100, random_state=1)	#Mixed sample
 
-	#run_tests(df, df_training, labels)
+	# run_tests(df, df_training, labels)
 
-	tree_depth = 2
+	tree_depth = 3
 	min_split = 1
 	test_set = df.values
 	measure = dt.Measure.GINI
@@ -74,8 +74,10 @@ def main() :
 	print('Accuracy:    {:.4f}'.format(dt.accuracy(test_set, tree)))
 	print('Measure:     {}'.format(measure))
 	print("=" * 40)
+	dt.prune_tree(tree)
+	dt.print_tree(tree, labels)
 
-	criteria_plot()
+	# criteria_plot()
 	# https://docs.google.com/spreadsheets/d/1G9dhbNj6mnbfRPGJOdwu3R1T3r_uf9Dlf83wQaUbSnw/edit#gid=0
 
 if __name__ == "__main__":

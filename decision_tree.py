@@ -167,6 +167,15 @@ def build_tree(db_training, max_depth, min_size , measure):
 	split(root, max_depth, min_size, 1, measure)
 	return root
 
+
+def prune_tree(node, depth=0):
+	if isinstance(node, dict) and not isinstance(node['left'], dict) and node['left'] == node['right']:
+		node['index'] = -1
+
+	elif isinstance(node, dict):
+		prune_tree(node['left'], depth+1)
+		prune_tree(node['right'], depth+1)
+
 def print_tree(node, labels, depth=0 ):
 	"""
 	Print decision tree recursively
@@ -176,9 +185,12 @@ def print_tree(node, labels, depth=0 ):
 	:return:
 	"""
 	if isinstance(node, dict):
-		print('{}[{} < {:.3f}]'.format(depth*'\t', labels[node['index']] , node['value']))
-		print_tree(node['left'], labels, depth+1)
-		print_tree(node['right'], labels, depth+1)
+		if node['index'] == -1:
+			print('{}[{}]'.format(depth * '\t', 'White' if node == 0.0 else 'Red'))
+		else:
+			print('{}[{} < {:.3f}]'.format(depth*'\t', labels[node['index']] , node['value']))
+			print_tree(node['left'], labels, depth+1)
+			print_tree(node['right'], labels, depth+1)
 	else:
 		print('{}[{}]'.format(depth*'\t', 'White' if node==0.0 else 'Red'))
 
@@ -189,7 +201,10 @@ def predict(node, row):
 	:param row: data row with attributes
 	:return: class tag, i.e:  0.0 or 1.0 for binary classification
 	"""
-	if row[node['index']] < node['value']:
+	if node['index'] == -1:
+		return node['left']
+
+	elif row[node['index']] < node['value']:
 		if isinstance(node['left'], dict):
 			return predict(node['left'], row)
 		else:
